@@ -2,6 +2,7 @@
 -export([start/0, hello/1, proc_run/5]).
 
 -define(Inf, 100000000).
+-define(GetElement(R,C,N,L), list:nth(R*N + C, L)).
 
 hello(Line)->
     % io:fwrite("hello"),
@@ -33,7 +34,6 @@ make_displs(NumVertices, NumProcs) ->
 spawner(NumVertices, NumProcs, StartRow, EndRow) ->
     spawn(main, proc_run, [NumVertices, NumProcs, StartRow, EndRow, []]).
 
-
 proc_run(NumVertices, NumProcs, StartRow, EndRow, LocalData) ->
     % hello(LocalData),
     % hello("self id\n"),
@@ -43,13 +43,14 @@ proc_run(NumVertices, NumProcs, StartRow, EndRow, LocalData) ->
             proc_run(NumVertices, NumProcs, StartRow, EndRow, lists:append(LocalData, Data));
         {"other", Data} ->
             proc_run(NumVertices, NumProcs, StartRow, EndRow, LocalData);
+        {"source", Source} ->
+            dijkstra(NumVertices, NumProcs, StartRow, EndRow, LocalData, Source);
         stop ->
             % hello("stop"),
             hello([self(), LocalData]),
             ok
     end.
     
-
 read_and_send(Device, Id) ->
     % hello("Id"),
     % hello(Id),
@@ -72,29 +73,51 @@ distribute_graph(Device, NumVertices, NumProcs, Displs, CurRow, CurIndex) ->
         CurRow > NumVertices ->
             % hello("out"),
             ok;
-        CurRow ==  EndRow ->
-            % hello(["created", CurIndex]),
+        CurRow =< EndRow ->
+            read_and_send(Device, CurIndex),
+            distribute_graph(Device, NumVertices, NumProcs, Displs, CurRow + 1, CurIndex);
+        true ->
             ets:insert(
                 procTable, 
                 {
-                    CurIndex, 
-                    spawner(NumVertices, NumProcs, CurRow, lists:nth(CurIndex, Displs))
+                    CurIndex + 1, 
+                    spawner(NumVertices, NumProcs, lists:nth(CurIndex, Displs)+1, lists:nth(CurIndex+1, Displs))
                 }
             ),
-            read_and_send(Device, CurIndex),
-            distribute_graph(Device, NumVertices, NumProcs, Displs, CurRow+1, CurIndex+1);
-        true ->
-            read_and_send(Device, CurIndex-1),
-            distribute_graph(Device, NumVertices, NumProcs, Displs, CurRow+1, CurIndex)
+            distribute_graph(Device, NumVertices, NumProcs, Displs, CurRow, CurIndex+1)
     end.
     
+
+updateDist(ResultVec, LocalData, Source, StartRow, EndRow) ->
+    
+
+dijkstra(NumVertices, NumProcs, StartRow, EndRow, LocalData, Source) ->
+
+    LocalVec = list:duplicate(?Inf, EndRow - StartRow),
+    ResultVec = list:duplicate(?Inf, NumVertices),
+    IsSource = fun (StartRow, EndRow, Source) ->
+            if Source < StartRow ->
+                false;
+            Source > EndRow ->
+                false;
+            true ->
+                true
+            end
+        end,
+    Source = IsSource(StartRow, EndRow, Source),
+    if Source ->
+        NewRes = updateDist(ResultVec, LocalData, Source, StartRow, EndRow)
+    
+    end.
+
 
                 
 start() ->
     {ok, Device} = file:open("./graph.txt", [read]),
-    [NumVertices, NumProcs] = read_int_line(Device),
+    [NumVertices, NumProcs, Source] = read_int_line(Device),
     hello(NumVertices),
     hello(NumProcs),
+    hello(Source),
     Displs = lists:append(make_displs(NumVertices, NumProcs), [ ?Inf ] ),
     
     ets:new(procTable, [named_table, public]),
@@ -110,17 +133,18 @@ start() ->
     
     LocalData = GetData([], 1, lists:nth(1, Displs)),
     % hello(Displs),
-    ets:insert(
-                procTable, 
-                {
-                    2, 
-                    spawner(NumVertices, NumProcs, lists:nth(1, Displs), lists:nth(2, Displs))
-                }
-            ),
+    % ets:insert(
+    %             procTable, 
+    %             {
+    %                 2, 
+    %                 spawner(NumVertices, NumProcs, lists:nth(1, Displs)+1, lists:nth(2, Displs))
+    %             }
+    %         ),
    
-
+%[2, 4, 6, inf]
+% (4,3)
     hello([self(), LocalData]),
-    distribute_graph(Device, NumVertices, NumProcs, Displs, lists:nth(2, Displs), 3),
+    distribute_graph(Device, NumVertices, NumProcs, Displs, lists:nth(1, Displs)+1, 1),
     % hello(NumVertices),
     % hello(NumProcs),
     % hello(Displs),  
