@@ -24,7 +24,7 @@ read_int_line(Device) ->
     end.
 
 
-make_displs(NumVertices, NumProcs) ->
+make_displs(NumVertices, NumProcs) -> 
     PerProc = NumVertices div NumProcs,
     RemProc = NumVertices rem NumProcs,
     InitDispls = lists:droplast(lists:seq(PerProc, NumVertices, PerProc)),
@@ -34,10 +34,12 @@ make_displs(NumVertices, NumProcs) ->
 spawner(NumVertices, NumProcs, Rank) ->
     spawn(main, proc_run, [NumVertices, NumProcs, Rank, []]).
 
+
 get_proc_rank(Displs, RowNumber)->
     get_proc_rank(Displs, 1, RowNumber).
-
-get_proc_rank(Displs, Rank, RowNumber) ->
+get_proc_rank(NumVertices, NumProcs, Vertex) when is_list(NumVertices) == false ->
+    get_proc_rank(make_displs(NumVertices, NumProcs), Vertex);  
+get_proc_rank(Displs, Rank, RowNumber)  ->
     case lists:nth(Rank, Displs) =< RowNumber of
         true ->
             get_proc_rank(Displs, Rank+1, RowNumber);
@@ -45,20 +47,20 @@ get_proc_rank(Displs, Rank, RowNumber) ->
             Rank-1
     end.
 
-get_minimum_vert(Dist) ->
-    get_minimum_vert(Dist, 1, {?Inf, -1}).
+get_minimum_vert(Dist, BaseVert) ->
+    get_minimum_vert(Dist, 1, BaseVert).
 
-get_minimum_vert([], Index, _) ->
-    {?Inf, Index};
+get_minimum_vert([], _, _) ->
+    {?Inf, -1};
 
-get_minimum_vert([H | T], Index, MinTup) ->
-    RetList = get_minimum_vert(T, Index+1, MinTup),
-    case element(1, RetList) < H of 
-        true ->
-            RetList;
-        false ->
-            {H, Index}
-        end.
+get_minimum_vert([H | T], Index, BaseVert) ->
+    RetList = get_minimum_vert(T, Index+1, BaseVert),
+    case {element(1, RetList) < H, ets:member(visited, H)} of 
+        {false, false} ->
+            {H, Index};
+        {_, _} ->
+            RetList
+    end.
 
 
 proc_run(NumVertices, NumProcs, Rank, LocalData) ->
@@ -86,6 +88,13 @@ send_to_neighbours(Neighs, Msg) ->
             end,
             Neighs
         ).
+
+wait_for_response([], Response, Accumulator, Result) -> Result;
+wait_for_response(Pids, Response, Accumulator, Result) ->
+    receive
+        {Response, Pid, Data} ->
+            wait_for_response(lists:delete(Pid, Pids), Response, Accumulator, Accumulator(Result, Data))
+    end.
 
 read_and_send(Device, Id) ->
     % hello("Id"),
@@ -126,18 +135,78 @@ distribute_graph(Device, NumVertices, NumProcs, Displs, CurRow, CurIndex) ->
 % collect(ReduceProc) ->
 %     ReduceProc ! {collect, self()}
 
-map_task(NumVertices, NumProcs, Rank, LocalData, LocalDist) ->
-    get_minimum_vert(LocalDist).
+map_task(NumVertices, NumProcs, Rank, Source, LocalData, LocalDist) ->
+    {StartRow, EndRow} = get_bounds(NumVertices, NumProcs, Rank),
+    send_to_neighbours( 
+                lists:delete(Rank, lists:seq(1, NumProcs)), 
+                {
+                    update,
+                    relax_edges(
+                        Source, 
+                        get_row(LocalData, Source-StartRow),
+                        lists:append([lists:sublist(Source-1, LocalDist), 0, lists:nthtail(NumVertices-Source, LocalDist)])
+                    ) 
+                }).
+%     get_minimum_vert(LocalDist).
 
-reduce_task(NumVertices, NumProcs, Rank, LocalData, LocalDist)->
-    get_minimum_vert(LocalDist).
+reduce_task(NumVertices, NumProcs, Rank, Source, LocalData, LocalDist)->
+    {StartRow, EndRow} = get_bounds(NumVertices, NumProcs, Rank),
+    send_to_neighbours([get_proc_rank(NumVertices, NumProcs, Source)] , get_minimum_vert(LocalDist, StartRow)),
+    receive
+        {mapper, Rank} ->
+            map_task();
+        {reducer, Rank} ->
+
+        true ->
+            ok
+    end.
 
 
-% init_dijkstra(NumVertices, NumProcs, StartRow, EndRow, Source) ->
-%     case { StartRow =< Source , Source >= EndRow } of
-%         {true, true} ->
+relax_edges(Vertex, Edges, LocalDist) ->
+    ets:insert(
+            visited,
+            {Vertex, true}
+        ),
+    relax_edges(Vertex, Edges, LocalDist, 1, list:nth(Vertex, LocalDist)).
 
-%         {_, _} ->
+relax_edges(Vertex, Edges, [H|T], Index, BaseDist) ->
+    case BaseDist + list:nth(Index, Edges) < H of
+        true -> 
+            lists:append([BaseDist + list:nth(Index, Edges)], relax_edges(Vertex, Edges, [T], Index+1, BaseDist));
+        false ->
+            lists:append([H], relax_edges(Vertex, Edges, [T], Index+1, BaseDist))
+    end.
+
+
+get_bounds(NumVertices, NumProcs, Rank) ->
+    StartRow = (Rank-1)*(NumVertices div NumProcs)+1,
+    EndRow = case Rank of
+        NumProcs ->
+            Rank*(NumVertices div NumProcs) + NumVertices rem NumProcs;
+        _ ->
+            Rank*(NumVertices div NumProcs)
+        end,
+    {
+        StartRow,
+        EndRow
+    }.
+
+init_dijkstra(NumVertices, NumProcs, Rank, Source, LocalData, LocalDist) ->
+    {StartRow, EndRow} = get_bounds(NumVertices, NumProcs, Rank),
+    case { StartRow =< Source , Source >= EndRow } of
+        {true, true} ->
+            send_to_neighbours( 
+                lists:delete(Source, lists:seq(1, NumProcs)), 
+                {
+                    update,
+                    relax_edges(
+                        Source, 
+                        get_row(LocalData, Source-StartRow),
+                        lists:append([lists:sublist(Source-1, LocalDist), 0, lists:nthtail(NumVertices-Source, LocalDist)])
+                    ) 
+                });
+        {_, _} ->
+            reduce_task(NumVertices, NumProcs, Rank, Source, LocalData, LocalDist)
 
 
 
@@ -177,7 +246,7 @@ start() ->
     
     ets:new(procTable, [named_table, public]),
     ets:new(idTable, [named_table, public]),
-
+    ets:new(visited, [named_table, public]),
     
     GetData = fun F(Data, CurRow, EndRow) ->
                 if 
@@ -190,17 +259,7 @@ start() ->
             end,
     
     LocalData = GetData([], 1, lists:nth(1, Displs)),
-    % hello(Displs),
-    % ets:insert(
-    %             procTable, 
-    %             {
-    %                 2, 
-    %                 spawner(NumVertices, NumProcs, lists:nth(1, Displs)+1, lists:nth(2, Displs))
-    %             }
-    %         ),
-   
-%[2, 4, 6, inf]
-% (4,3)
+    
     hello([self(), LocalData]),
     register_proc(self(), 1),
     distribute_graph(Device, NumVertices, NumProcs, Displs, lists:nth(1, Displs)+1, 1),
