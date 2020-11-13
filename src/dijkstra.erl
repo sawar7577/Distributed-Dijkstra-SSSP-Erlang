@@ -1,35 +1,62 @@
 -module(dijkstra).
 
--export([map_task/5, reduce_task/5, relax_edges/3, relax_edges/5, init_dijkstra/4]).
+-export([init_dijkstra/4]).
 
--import(helpers,[make_displs/2, get_minimum_vert/2, get_minimum_vert/3, get_proc_rank/2, get_proc_rank/3, get_rank/0, get_bounds/2, get_row/3]).
--import(distributors,[register_proc/2, read_int_line/1, send_to_neighbours/2, read_and_send/2, distribute_graph/6, wait_for_response/3, wait_for_response/4]).
+-import(helpers,[make_displs/2, get_minimum_vert/3, get_minimum_vert/4, get_proc_rank/2, get_proc_rank/3, get_rank/0, get_bounds/2, get_row/3, hello/1]).
+-import(distributors,[send_to_neighbours/2, wait_for_response/3, wait_for_response/4]).
 -include("macros.hrl").
 
-reduce_task(NumVertices, NumProcs, Source, LocalData, LocalDist)->
+reduce_task(NumVertices, NumProcs, Source, LocalData, LocalDist, Visited)->
     Rank = helpers:get_rank(),
-    % ok.
     {StartRow, EndRow} = helpers:get_bounds(NumVertices, NumProcs),
-    distributors:send_to_neighbours([helpers:get_proc_rank(NumVertices, NumProcs, Source)] , {reduction, Rank, get_minimum_vert(lists:sublist(LocalDist, StartRow, EndRow-StartRow+1), StartRow)}),
-    wait_command(NumVertices, NumProcs, Source, LocalData, LocalDist).
+    distributors:send_to_neighbours([helpers:get_proc_rank(NumVertices, NumProcs, Source)] , {reduction, Rank, get_minimum_vert(lists:sublist(LocalDist, StartRow, EndRow-StartRow+1), StartRow, Visited)}),
+    wait_command(
+        NumVertices, 
+        NumProcs, 
+        Source, 
+        LocalData, 
+        LocalDist, 
+        lists:append(Visited, [Source])
+    ).
     
 
-wait_command(NumVertices, NumProcs, Source, LocalData, LocalDist) ->
+wait_command(NumVertices, NumProcs, Source, LocalData, LocalDist, Visited) ->
     Rank = helpers:get_rank(),
     receive
         {mapping, Rank, Vertex} ->
-            map_task(NumVertices, NumProcs, Vertex, LocalData, LocalDist);
-        {reduction, VRank, Vertex} ->
-            reduce_task(NumVertices, NumProcs, Vertex, LocalData, LocalDist);
+            map_task(
+                NumVertices, 
+                NumProcs, 
+                Vertex, 
+                LocalData, 
+                LocalDist, 
+                Visited
+            );
+        {reduction, _, Vertex} ->
+            reduce_task(
+                NumVertices, 
+                NumProcs, 
+                Vertex, 
+                LocalData, 
+                LocalDist, 
+                Visited
+            );
         {update, GlobalDist} ->
-            wait_command(NumVertices, NumProcs, Source, LocalData, GlobalDist)
+            wait_command(
+                NumVertices, 
+                NumProcs, 
+                Source, 
+                LocalData, 
+                GlobalDist, 
+                Visited
+            );
+        stop ->
+            ok
     end.
 
 
-map_task(NumVertices, NumProcs, Source, LocalData, LocalDist) ->
-    % hello(["map", self()]),
+map_task(NumVertices, NumProcs, Source, LocalData, LocalDist, Visited) ->
     Rank = helpers:get_rank(),
-    % ok.
     Neighs = lists:delete(Rank, lists:seq(1, NumProcs)),
     {StartRow, EndRow} = helpers:get_bounds(NumVertices, NumProcs),
     Accumulator = fun(X, Y) ->
@@ -63,34 +90,46 @@ map_task(NumVertices, NumProcs, Source, LocalData, LocalDist) ->
                 Neighs,
                 reduction,
                 Accumulator,
-                helpers:get_minimum_vert(lists:sublist(LocalDist, StartRow, EndRow-StartRow+1), StartRow)
+                helpers:get_minimum_vert(
+                    lists:sublist(LocalDist, StartRow, EndRow-StartRow+1),
+                    StartRow,
+                    Visited
+                )
             ),
     
     MinRank = helpers:get_proc_rank(NumVertices, NumProcs, MinVertex),
 
-
-    distributors:send_to_neighbours(
-        [MinRank],
-        {
-            mapping,
-            MinRank, 
-            MinVertex
-        }
-    ),
-
-    wait_command(NumVertices, NumProcs, MinVertex, LocalData, GlobalDist).
+    case MinVal of
+        ?Inf ->
+            distributors:send_to_neighbours(
+                Neighs, 
+                stop
+            ),
+            helpers:hello(["result", GlobalDist]),
+            ok;
+        _ ->
+            distributors:send_to_neighbours(
+                [MinRank],
+                {
+                    mapping,
+                    MinRank, 
+                    MinVertex
+                }
+            ),
+            wait_command(
+                NumVertices, 
+                NumProcs, 
+                MinVertex, 
+                LocalData, 
+                GlobalDist, 
+                lists:append(Visited, [Source])
+            )
+    end.
 
 relax_edges(Vertex, Edges, LocalDist) ->
-    % hello(["start relaxing", Vertex, Edges, LocalDist]),
-    ets:insert(
-            visited,
-            {Vertex, true}
-        ),
     relax_edges(Vertex, Edges, LocalDist, 1, lists:nth(Vertex, LocalDist)).
-
-relax_edges(Vertex, Edges, [], Index, BaseDist) -> [];
+relax_edges(_, _, [], _, _) -> [];
 relax_edges(Vertex, Edges, [H|T], Index, BaseDist) ->
-    % hello(["relaxing", self(), Vertex, H, T, Index]),
     case BaseDist + lists:nth(Index, Edges) < H of
         true -> 
             lists:append([BaseDist + lists:nth(Index, Edges)], relax_edges(Vertex, Edges, T, Index+1, BaseDist));
@@ -103,7 +142,21 @@ init_dijkstra(NumVertices, NumProcs, Source, LocalData) ->
     {StartRow, EndRow} = helpers:get_bounds(NumVertices, NumProcs),
     case { StartRow =< Source , Source =< EndRow } of
         {true, true} ->
-            map_task(NumVertices, NumProcs, Source, LocalData, lists:append([lists:duplicate(Source-1, ?Inf), [0], lists:duplicate(NumVertices-Source, ?Inf)]));
+            map_task(
+                NumVertices, 
+                NumProcs, 
+                Source, 
+                LocalData, 
+                lists:append([lists:duplicate(Source-1, ?Inf), [0], lists:duplicate(NumVertices-Source, ?Inf)]),
+                []
+            );
         {_, _} ->
-            wait_command(NumVertices, NumProcs, Source, LocalData, lists:duplicate(NumVertices, ?Inf))
+            wait_command(
+                NumVertices, 
+                NumProcs, 
+                Source, 
+                LocalData, 
+                lists:duplicate(NumVertices, ?Inf),
+                []
+            )
     end.
