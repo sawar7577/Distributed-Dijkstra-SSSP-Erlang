@@ -1,7 +1,7 @@
 -module(distributors).
 
 -define(Inf, 100000000).
--export([register_proc/2, read_int_line/1, send_to_neighbours/2, read_and_send/2, distribute_graph/6]).
+-export([register_proc/2, read_int_line/1, send_to_neighbours/2, read_and_send/2, distribute_graph/6, wait_for_response/3, wait_for_response/4]).
 
 
 spawner(NumVertices, NumProcs, Rank) ->
@@ -30,11 +30,22 @@ read_int_line(Device) ->
 send_to_neighbours(Neighs, Msg) ->
     lists:foreach(
             fun(X) ->
-                [{_, SPid}] = ets:lookup(procTable, X),
+               [{_, SPid}] = ets:lookup(procTable, X),
                 SPid ! Msg
             end,
             Neighs
         ).
+
+wait_for_response(Pids, Response, Accumulator) -> 
+    wait_for_response(Pids, Response, Accumulator, {?Inf, -1}).
+
+wait_for_response([], Response, Accumulator, Result) -> Result;
+wait_for_response(Pids, Response, Accumulator, Result) ->
+    % hello(["waiting ", self(), Pids]),
+    receive
+        {Response, Pid, Data} ->
+            wait_for_response(lists:delete(Pid, Pids), Response, Accumulator, Accumulator(Result, Data))
+    end.
 
 read_and_send(Device, Id) ->
     % hello("Id"),
