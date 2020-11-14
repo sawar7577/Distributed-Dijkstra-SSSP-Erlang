@@ -24,8 +24,9 @@ start() ->
         dijkstra 
     ]),
     
-    {ok, Device} = file:open("./test.txt", [read]),
+    {ok, Device} = file:open("../test/test.txt", [read]),
     [NumVertices, NumProcs, Source] = distributors:read_int_line(Device),
+    helpers:hello([NumVertices, NumProcs, Source]),
     Displs = lists:append(helpers:make_displs(NumVertices, NumProcs), [ ?Inf ] ),
     
     ets:new(procTable, [named_table, public]),
@@ -41,11 +42,13 @@ start() ->
                 end
             end,
     
+
+    helpers:hello(["start", erlang:system_time(), erlang:timestamp()]),
     LocalData = GetData([], 1, lists:nth(1, Displs)),
     
     distributors:register_proc(self(), 1),
     distributors:distribute_graph(Device, NumVertices, NumProcs, Displs, lists:nth(1, Displs)+1, 1),
-    distributors:send_to_neighbours(lists:seq(2, NumProcs), {init, 1}),
+    distributors:send_to_neighbours(lists:seq(2, NumProcs), {init, Source}),
     
     dijkstra:init_dijkstra(
         NumVertices,

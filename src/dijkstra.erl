@@ -106,6 +106,7 @@ map_task(NumVertices, NumProcs, Source, LocalData, LocalDist, Visited) ->
                 stop
             ),
             helpers:hello(["result", GlobalDist]),
+            helpers:hello(["end", erlang:system_time(), erlang:timestamp()]),
             ok;
         _ ->
             distributors:send_to_neighbours(
@@ -140,8 +141,10 @@ relax_edges(Vertex, Edges, [H|T], Index, BaseDist) ->
 
 init_dijkstra(NumVertices, NumProcs, Source, LocalData) ->
     {StartRow, EndRow} = helpers:get_bounds(NumVertices, NumProcs),
+    % helpers:hello(["entered init", self(), StartRow, EndRow, Source]),
     case { StartRow =< Source , Source =< EndRow } of
         {true, true} ->
+            % helpers:hello(["init", self(), "source"]),
             map_task(
                 NumVertices, 
                 NumProcs, 
@@ -151,6 +154,7 @@ init_dijkstra(NumVertices, NumProcs, Source, LocalData) ->
                 []
             );
         {_, _} ->
+            % helpers:hello(["init", self(), "not source"]),
             wait_command(
                 NumVertices, 
                 NumProcs, 

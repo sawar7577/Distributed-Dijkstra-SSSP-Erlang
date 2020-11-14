@@ -23,7 +23,17 @@ make_displs(NumVertices, NumProcs) ->
     PerProc = NumVertices div NumProcs,
     RemProc = NumVertices rem NumProcs,
     InitDispls = lists:droplast(lists:seq(PerProc, NumVertices, PerProc)),
-    lists:append(InitDispls, [lists:last(InitDispls)+PerProc+RemProc]).
+    lists:append(
+        InitDispls,
+        [
+            case InitDispls of
+                [] ->
+                    PerProc+RemProc;
+                _ ->
+                    lists:last(InitDispls)+PerProc+RemProc
+            end
+        ]
+    ).
 
 get_minimum_vert(Dist, BaseVert, Visited) ->
     get_minimum_vert(Dist, 1, BaseVert, Visited).

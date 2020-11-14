@@ -67,6 +67,7 @@ read_and_send(Device, Id) ->
 proc_run(NumVertices, NumProcs, Rank, LocalData) ->
     receive
         {input, Data} ->
+            % helpers:hello(["received", self(), Data]),
             proc_run(
                 NumVertices, 
                 NumProcs, 
