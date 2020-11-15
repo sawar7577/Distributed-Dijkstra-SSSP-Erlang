@@ -24,7 +24,7 @@ start() ->
         dijkstra 
     ]),
     
-    {ok, Device} = file:open("../test/test.txt", [read]),
+    {ok, Device} = file:open("./test.txt", [read]),
     [NumVertices, NumProcs, Source] = distributors:read_int_line(Device),
     helpers:hello([NumVertices, NumProcs, Source]),
     Displs = lists:append(helpers:make_displs(NumVertices, NumProcs), [ ?Inf ] ),

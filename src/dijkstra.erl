@@ -2,60 +2,59 @@
 
 -export([init_dijkstra/4]).
 
--import(helpers,[make_displs/2, get_minimum_vert/3, get_minimum_vert/4, get_proc_rank/2, get_proc_rank/3, get_rank/0, get_bounds/2, get_row/3, hello/1]).
+-import(helpers,[make_displs/2, get_minimum_vert/3, get_minimum_vert/4, get_proc_rank/2, get_proc_rank/3, get_rank/0, get_bounds/2, get_row/3, get_col/3, hello/1]).
 -import(distributors,[send_to_neighbours/2, wait_for_response/3, wait_for_response/4]).
 -include("macros.hrl").
 
-reduce_task(NumVertices, NumProcs, Source, LocalData, LocalDist, Visited)->
+reduce_task(NumVertices, NumProcs, Source, SourceDist, LocalData, LocalDist, Visited)->
     Rank = helpers:get_rank(),
     {StartRow, EndRow} = helpers:get_bounds(NumVertices, NumProcs),
-    distributors:send_to_neighbours([helpers:get_proc_rank(NumVertices, NumProcs, Source)] , {reduction, Rank, get_minimum_vert(lists:sublist(LocalDist, StartRow, EndRow-StartRow+1), StartRow, Visited)}),
-    wait_command(
-        NumVertices, 
-        NumProcs, 
-        Source, 
-        LocalData, 
-        LocalDist, 
-        lists:append(Visited, [Source])
-    ).
+    { UpdateDist , UpdateVisited } = relax_edges(
+                                        Source,
+                                        get_col(LocalData, Source, NumVertices),
+                                        LocalDist,
+                                        Visited,
+                                        SourceDist
+                                    ),
     
+    distributors:send_to_neighbours(
+            [1],
+            {
+                reduction, 
+                Rank,
+                get_minimum_vert(
+                    UpdateDist,
+                    StartRow, 
+                    UpdateVisited
+                )     
+            }
+        ),
 
-wait_command(NumVertices, NumProcs, Source, LocalData, LocalDist, Visited) ->
-    Rank = helpers:get_rank(),
     receive
-        {mapping, Rank, Vertex} ->
-            map_task(
-                NumVertices, 
-                NumProcs, 
-                Vertex, 
-                LocalData, 
-                LocalDist, 
-                Visited
-            );
-        {reduction, _, Vertex} ->
+        {reduction, MinVertex, MinVal} ->
             reduce_task(
                 NumVertices, 
                 NumProcs, 
-                Vertex, 
+                MinVertex,
+                MinVal, 
                 LocalData, 
-                LocalDist, 
-                Visited
-            );
-        {update, GlobalDist} ->
-            wait_command(
-                NumVertices, 
-                NumProcs, 
-                Source, 
-                LocalData, 
-                GlobalDist, 
-                Visited
+                UpdateDist, 
+                UpdateVisited
             );
         stop ->
+            distributors:send_to_neighbours(
+                [1],
+                {
+                    result, 
+                    Rank,
+                    lists:zip(lists:seq(StartRow, EndRow), UpdateDist)     
+                }
+            ),
             ok
     end.
+    
 
-
-map_task(NumVertices, NumProcs, Source, LocalData, LocalDist, Visited) ->
+map_task(NumVertices, NumProcs, Source, SourceDist, LocalData, LocalDist, Visited) ->
     Rank = helpers:get_rank(),
     Neighs = lists:delete(Rank, lists:seq(1, NumProcs)),
     {StartRow, EndRow} = helpers:get_bounds(NumVertices, NumProcs),
@@ -68,99 +67,109 @@ map_task(NumVertices, NumProcs, Source, LocalData, LocalDist, Visited) ->
                 end
             end, 
     
-    
-    GlobalDist = relax_edges(Source, get_row(LocalData, Source-StartRow, NumVertices), LocalDist),
-    distributors:send_to_neighbours(
-        Neighs, 
-        {
-            update,
-            GlobalDist
-        }
-    ),
-    distributors:send_to_neighbours(
-        Neighs, 
-        {
-            reduction,
-            Rank,
-            Source
-        }
-    ),
-
+    { UpdateDist, UpdateVisited } = relax_edges(
+                                        Source,
+                                        get_col(LocalData, Source, NumVertices),
+                                        LocalDist,
+                                        Visited,
+                                        SourceDist
+                                    ),
     {MinVal, MinVertex} = distributors:wait_for_response(
                 Neighs,
                 reduction,
                 Accumulator,
                 helpers:get_minimum_vert(
-                    lists:sublist(LocalDist, StartRow, EndRow-StartRow+1),
+                    UpdateDist,
                     StartRow,
-                    Visited
+                    UpdateVisited
                 )
             ),
-    
-    MinRank = helpers:get_proc_rank(NumVertices, NumProcs, MinVertex),
-
+   
     case MinVal of
         ?Inf ->
             distributors:send_to_neighbours(
                 Neighs, 
                 stop
             ),
-            helpers:hello(["result", GlobalDist]),
+            Result = distributors:wait_for_response(
+                Neighs,
+                result,
+                fun(X, Y) ->
+                    lists:append(X, Y)
+                end,
+                lists:zip(lists:seq(StartRow, EndRow), UpdateDist)
+            ),
+            helpers:hello(["result", Result]),
             helpers:hello(["end", erlang:system_time(), erlang:timestamp()]),
             ok;
         _ ->
             distributors:send_to_neighbours(
-                [MinRank],
+                Neighs,
                 {
-                    mapping,
-                    MinRank, 
-                    MinVertex
+                    reduction, 
+                    MinVertex,
+                    MinVal        
                 }
             ),
-            wait_command(
+            map_task(
                 NumVertices, 
                 NumProcs, 
-                MinVertex, 
+                MinVertex,
+                MinVal, 
                 LocalData, 
-                GlobalDist, 
-                lists:append(Visited, [Source])
+                UpdateDist, 
+                UpdateVisited
             )
     end.
 
-relax_edges(Vertex, Edges, LocalDist) ->
-    relax_edges(Vertex, Edges, LocalDist, 1, lists:nth(Vertex, LocalDist)).
-relax_edges(_, _, [], _, _) -> [];
-relax_edges(Vertex, Edges, [H|T], Index, BaseDist) ->
-    case BaseDist + lists:nth(Index, Edges) < H of
+
+
+
+relax_edges(Vertex, Edges, LocalDist, Visited, BaseDist) ->
+    { 
+        relax_edges(Edges, LocalDist, 1, BaseDist),
+        lists:append(Visited, [Vertex])
+    }.
+relax_edges(_, [], _, _) -> [];
+relax_edges([Edge | RestEdges], [H|T], Index, BaseDist) ->
+    case BaseDist + Edge < H of
         true -> 
-            lists:append([BaseDist + lists:nth(Index, Edges)], relax_edges(Vertex, Edges, T, Index+1, BaseDist));
+            lists:append([BaseDist + Edge], relax_edges(RestEdges, T, Index+1, BaseDist));
         false ->
-            lists:append([H], relax_edges(Vertex, Edges, T, Index+1, BaseDist))
+            lists:append([H], relax_edges(RestEdges, T, Index+1, BaseDist))
     end.
 
 
 init_dijkstra(NumVertices, NumProcs, Source, LocalData) ->
+    Rank = get_rank(),
     {StartRow, EndRow} = helpers:get_bounds(NumVertices, NumProcs),
-    % helpers:hello(["entered init", self(), StartRow, EndRow, Source]),
-    case { StartRow =< Source , Source =< EndRow } of
-        {true, true} ->
-            % helpers:hello(["init", self(), "source"]),
+    LocalDist = case { StartRow =< Source , Source =< EndRow } of
+                    {true, true} ->
+                        lists:append([lists:duplicate(Source-StartRow, ?Inf), [0], lists:duplicate(EndRow-Source, ?Inf)]);
+                    {_, _} ->
+                        lists:duplicate(EndRow-StartRow+1, ?Inf)
+                end,
+    
+    case Rank of
+        1 ->
             map_task(
-                NumVertices, 
-                NumProcs, 
-                Source, 
-                LocalData, 
-                lists:append([lists:duplicate(Source-1, ?Inf), [0], lists:duplicate(NumVertices-Source, ?Inf)]),
+                NumVertices,
+                NumProcs,
+                Source,
+                0,
+                LocalData,
+                LocalDist,
                 []
             );
-        {_, _} ->
-            % helpers:hello(["init", self(), "not source"]),
-            wait_command(
-                NumVertices, 
-                NumProcs, 
-                Source, 
-                LocalData, 
-                lists:duplicate(NumVertices, ?Inf),
-                []
+
+        _ ->         
+            reduce_task(
+                    NumVertices,
+                    NumProcs,
+                    Source,
+                    0,
+                    LocalData,
+                    LocalDist,
+                    []
             )
     end.

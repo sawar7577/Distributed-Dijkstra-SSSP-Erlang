@@ -11,6 +11,7 @@
     get_rank/0,
     get_rank/1,
     get_row/3,
+    get_col/3,
     hello/1]).
 
 -include("macros.hrl").
@@ -90,4 +91,12 @@ get_rank(Pid) ->
 
 get_row(Data, RowNumber, NumVertices) ->
     lists:sublist(Data, NumVertices*RowNumber+1, NumVertices).
+
+get_col([], _, _) -> [];
+get_col(Data, ColNumber, NumVertices) ->
+    {Row, RestData} = lists:split(NumVertices, Data),
+    lists:append(
+        [lists:nth(ColNumber, Row)],
+        get_col(RestData, ColNumber, NumVertices)
+    ).
 
