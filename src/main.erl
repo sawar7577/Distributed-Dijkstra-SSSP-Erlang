@@ -5,9 +5,8 @@
 
 -import(distributors, [register_proc/2, read_int_line/1]).
 -import(helpers, [make_displs/2, hello/1]).
--import(dijkstra, [init_dijkstra/4]).
--define(Inf, 100000000).
--define(GetElement(R,C,N,L), lists:nth(R*N + C, L)).
+-import(dijkstra, [init_dijkstra/6, proc_run/5, distribute_graph/6]).
+-include("macros.hrl").
 
 compile_files(Files) ->
     lists:foreach(fun(X) ->
@@ -27,10 +26,9 @@ start() ->
     {ok, Device} = file:open("./test.txt", [read]),
     [NumVertices, NumProcs, Source] = distributors:read_int_line(Device),
     helpers:hello([NumVertices, NumProcs, Source]),
+    SysProps = {NumVertices, NumProcs},
     Displs = lists:append(helpers:make_displs(NumVertices, NumProcs), [ ?Inf ] ),
     
-    ets:new(procTable, [named_table, public]),
-    ets:new(idTable, [named_table, public]),
     
     GetData = fun F(Data, CurRow, EndRow) ->
                 if 
@@ -46,18 +44,17 @@ start() ->
     helpers:hello(["start", erlang:system_time(), erlang:timestamp()]),
     LocalData = GetData([], 1, lists:nth(1, Displs)),
     
-    distributors:register_proc(self(), 1),
-    distributors:distribute_graph(Device, NumVertices, NumProcs, Displs, lists:nth(1, Displs)+1, 1),
-    distributors:send_to_neighbours(lists:seq(2, NumProcs), {init, Source}),
+    Pids = dijkstra:distribute_graph(Device, SysProps, Displs, lists:nth(1, Displs)+1, 1, self()),
+    % helpers:hello([self(), Pids]),
+    distributors:send_to_neighbours(Pids, {init, {0, Source}}),
     
     dijkstra:init_dijkstra(
-        NumVertices,
-        NumProcs, 
-        Source, 
-        LocalData
+        1,
+        helpers:get_bounds(SysProps, 1),
+        LocalData,
+        SysProps, 
+        {0, Source}, 
+        Pids
     ),
    
-    ets:delete(procTable),
-    ets:delete(idTable),
-  
     file:close(Device).

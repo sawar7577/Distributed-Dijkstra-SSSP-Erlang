@@ -1,15 +1,22 @@
 -module(distributors).
 
--define(Inf, 100000000).
--export([register_proc/2, proc_run/4, read_int_line/1, send_to_neighbours/2, distribute_graph/6, wait_for_response/3, wait_for_response/4]).
+-include("macros.hrl").
+-export([
+    % register_proc/2, 
+    read_int_line/1, 
+    send_to_neighbours/2, 
+    wait_for_response/3,
+    wait_for_response/4, 
+    read_and_send/2]).
+
 -import(helpers, [hello/1]).
 
-spawner(NumVertices, NumProcs, Rank) ->
-    spawn(distributors, proc_run, [NumVertices, NumProcs, Rank, []]).
 
-register_proc(Pid, Id) ->
-    ets:insert(procTable, {Id, Pid}),
-    ets:insert(idTable, {Pid, Id}).
+
+
+% register_proc(Pid, Id) ->
+%     ets:insert(procTable, {Id, Pid}),
+%     ets:insert(idTable, {Pid, Id}).
 
 read_int_line(Device) ->
     Row = file:read_line(Device),
@@ -29,9 +36,10 @@ read_int_line(Device) ->
 
 send_to_neighbours(Neighs, Msg) ->
     lists:foreach(
-            fun(X) ->
-               [{_, SPid}] = ets:lookup(procTable, X),
-                SPid ! Msg
+            fun(Pid) ->
+                % helpers:hello(["pid", Pid, self(), Msg]),
+            %    [{_, SPid}] = ets:lookup(procTable, Pid),
+                Pid ! Msg
             end,
             Neighs
         ).
@@ -52,66 +60,14 @@ wait_for_response(Pids, Response, Accumulator, Result) ->
     end.
 
 read_and_send(Device, Id) ->
-    [{_, SPid}] = ets:lookup(procTable, Id),
+    % [{_, SPid}] = ets:lookup(procTable, Id),
     Row = read_int_line(Device),
     case Row of 
         [] -> 
             ok;
         [H|T] ->
             Msg = {input, Row},
-            SPid ! Msg,
+            Id ! Msg,
             [H|T]
     end.
 
-
-proc_run(NumVertices, NumProcs, Rank, LocalData) ->
-    receive
-        {input, Data} ->
-            % helpers:hello(["received", self(), Data]),
-            proc_run(
-                NumVertices, 
-                NumProcs, 
-                Rank, 
-                lists:append(LocalData, Data)
-            );
-        {init, Source} ->
-            dijkstra:init_dijkstra(
-                NumVertices, 
-                NumProcs, 
-                Source, 
-                LocalData
-            ),
-            ok;
-        stop ->
-            ok
-    end.
-
-distribute_graph(Device, NumVertices, NumProcs, Displs, CurRow, CurIndex) ->
-    EndRow = lists:nth(CurIndex, Displs),
-    if 
-        CurRow > NumVertices ->
-            ok;
-        CurRow =< EndRow ->
-            read_and_send(Device, CurIndex),
-            distribute_graph(
-                Device, 
-                NumVertices, 
-                NumProcs, 
-                Displs, 
-                CurRow + 1, 
-                CurIndex
-            );
-        true ->
-            register_proc(
-                    spawner(NumVertices, NumProcs, CurIndex+1),                
-                    CurIndex+1
-                ),
-            distribute_graph(
-                Device, 
-                NumVertices, 
-                NumProcs, 
-                Displs, 
-                CurRow, 
-                CurIndex+1
-            )
-    end.

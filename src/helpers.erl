@@ -1,15 +1,16 @@
 -module(helpers).
 -export([
     make_displs/2,
+    get_minimum_vert/2,
     get_minimum_vert/3,
     get_minimum_vert/4,
     get_proc_rank/2,
     get_proc_rank/3,
+    % get_bounds/1,
     get_bounds/2,
-    get_bounds/3,
-    get_pid/1,
-    get_rank/0,
-    get_rank/1,
+    % get_pid/1,
+    % get_rank/0,
+    % get_rank/1,
     get_row/3,
     get_col/3,
     hello/1]).
@@ -35,6 +36,9 @@ make_displs(NumVertices, NumProcs) ->
             end
         ]
     ).
+
+get_minimum_vert({Dist, Visited}, BaseVert) ->
+    get_minimum_vert(Dist, BaseVert, Visited).
 
 get_minimum_vert(Dist, BaseVert, Visited) ->
     get_minimum_vert(Dist, 1, BaseVert, Visited).
@@ -64,9 +68,11 @@ get_proc_rank(Displs, Rank, RowNumber)  ->
             Rank
     end.
 
-get_bounds(NumVertices, NumProcs) -> 
-    get_bounds(NumVertices, NumProcs, get_rank()).
-get_bounds(NumVertices, NumProcs, Rank) ->
+% get_bounds(SysProps) -> 
+    % get_bounds(SysProps, get_rank()).
+get_bounds(SysProps, Rank) ->
+    % hello(SysProps),
+    {NumVertices, NumProcs} = SysProps,
     StartRow = (Rank-1)*(NumVertices div NumProcs)+1,
     EndRow = case Rank of
         NumProcs ->
@@ -80,14 +86,14 @@ get_bounds(NumVertices, NumProcs, Rank) ->
     }.
 
 
-get_pid(Rank) ->
-    [{_, Pid}] = ets:lookup(procTable, Rank),
-    Pid.
-get_rank() -> 
-    get_rank(self()).
-get_rank(Pid) ->
-    [{_, Rank}] = ets:lookup(idTable, Pid),
-    Rank.
+% get_pid(Rank) ->
+%     [{_, Pid}] = ets:lookup(procTable, Rank),
+%     Pid.
+% get_rank() -> 
+%     get_rank(self()).
+% get_rank(Pid) ->
+%     [{_, Rank}] = ets:lookup(idTable, Pid),
+%     Rank.
 
 get_row(Data, RowNumber, NumVertices) ->
     lists:sublist(Data, NumVertices*RowNumber+1, NumVertices).

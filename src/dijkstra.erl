@@ -1,63 +1,74 @@
 -module(dijkstra).
 
--export([init_dijkstra/4]).
+-export([init_dijkstra/6, proc_run/5, distribute_graph/6]).
 
--import(helpers,[make_displs/2, get_minimum_vert/3, get_minimum_vert/4, get_proc_rank/2, get_proc_rank/3, get_rank/0, get_bounds/2, get_row/3, get_col/3, hello/1]).
--import(distributors,[send_to_neighbours/2, wait_for_response/3, wait_for_response/4]).
+-import(helpers,[make_displs/2, get_minimum_vert/2, get_minimum_vert/3, get_minimum_vert/4, get_proc_rank/2, get_proc_rank/3, get_rank/0, get_bounds/2, get_row/3, get_col/3, hello/1]).
+-import(distributors,[send_to_neighbours/2, wait_for_response/3, wait_for_response/4, read_and_send/2]).
 -include("macros.hrl").
 
-reduce_task(NumVertices, NumProcs, Source, SourceDist, LocalData, LocalDist, Visited)->
-    Rank = helpers:get_rank(),
-    {StartRow, EndRow} = helpers:get_bounds(NumVertices, NumProcs),
-    { UpdateDist , UpdateVisited } = relax_edges(
-                                        Source,
-                                        get_col(LocalData, Source, NumVertices),
-                                        LocalDist,
-                                        Visited,
-                                        SourceDist
-                                    ),
+
+% SysProps = {NumVertices, NumProcs}
+% ProcProps = {StartRow, EndRow}
+% ProcData = {LocalDist, Visited}
+
+spawner(SysProps, Rank) ->
+    spawn(dijkstra, proc_run, [Rank, helpers:get_bounds(SysProps, Rank), [], SysProps, [self()]]).
+
+reduce_task(ProcProps, ProcData, LocalData, SysProps, SourceProps, Pids)->
+    % Rank = helpers:get_rank(),
+    {NumVertices, _} = SysProps,
+    {StartRow, EndRow} = ProcProps,
+    % {LocalDist, Visited} = ProcData,
+    % {SourceDist, Source} = SourceProps,
+% 
+% { UpdateDist , UpdateVisited }
+    UpdateProcData = relax_edges(
+                        SourceProps,
+                        ProcData,
+                        get_col(LocalData, element(2, SourceProps), NumVertices)
+                    ),
     
     distributors:send_to_neighbours(
-            [1],
+            Pids,
             {
                 reduction, 
-                Rank,
+                self(),
                 get_minimum_vert(
-                    UpdateDist,
-                    StartRow, 
-                    UpdateVisited
+                    UpdateProcData,
+                    StartRow 
                 )     
             }
         ),
 
     receive
-        {reduction, MinVertex, MinVal} ->
+        {reduction, MinVertexProps} ->
             reduce_task(
-                NumVertices, 
-                NumProcs, 
-                MinVertex,
-                MinVal, 
-                LocalData, 
-                UpdateDist, 
-                UpdateVisited
+                ProcProps,
+                UpdateProcData,
+                LocalData,
+                SysProps,
+                MinVertexProps,
+                Pids
             );
         stop ->
             distributors:send_to_neighbours(
-                [1],
+                Pids,
                 {
                     result, 
-                    Rank,
-                    lists:zip(lists:seq(StartRow, EndRow), UpdateDist)     
+                    self(),
+                    lists:zip(lists:seq(StartRow, EndRow), element(1, UpdateProcData))     
                 }
             ),
             ok
     end.
     
 
-map_task(NumVertices, NumProcs, Source, SourceDist, LocalData, LocalDist, Visited) ->
-    Rank = helpers:get_rank(),
-    Neighs = lists:delete(Rank, lists:seq(1, NumProcs)),
-    {StartRow, EndRow} = helpers:get_bounds(NumVertices, NumProcs),
+map_task(ProcProps, ProcData, LocalData, SysProps, SourceProps, Pids) ->
+    % Rank = helpers:get_rank(),
+    % Neighs = lists:delete(Rank, lists:seq(1, NumProcs)),
+    {NumVertices, _} = SysProps,
+    {StartRow, EndRow} = ProcProps,
+    {StartRow, EndRow} = ProcProps,
     Accumulator = fun(X, Y) ->
                 case element(1, X) < element(1, Y) of
                     true ->
@@ -67,68 +78,61 @@ map_task(NumVertices, NumProcs, Source, SourceDist, LocalData, LocalDist, Visite
                 end
             end, 
     
-    { UpdateDist, UpdateVisited } = relax_edges(
-                                        Source,
-                                        get_col(LocalData, Source, NumVertices),
-                                        LocalDist,
-                                        Visited,
-                                        SourceDist
-                                    ),
-    {MinVal, MinVertex} = distributors:wait_for_response(
-                Neighs,
+    UpdateProcData = relax_edges(
+                        SourceProps,
+                        ProcData,
+                        get_col(LocalData, element(2, SourceProps), NumVertices)
+                    ),
+    MinVertexProps = distributors:wait_for_response(
+                Pids,
                 reduction,
                 Accumulator,
                 helpers:get_minimum_vert(
-                    UpdateDist,
-                    StartRow,
-                    UpdateVisited
+                    UpdateProcData,
+                    StartRow
                 )
             ),
    
-    case MinVal of
+    case element(1, MinVertexProps) of
         ?Inf ->
             distributors:send_to_neighbours(
-                Neighs, 
+                Pids, 
                 stop
             ),
             Result = distributors:wait_for_response(
-                Neighs,
+                Pids,
                 result,
                 fun(X, Y) ->
                     lists:append(X, Y)
                 end,
-                lists:zip(lists:seq(StartRow, EndRow), UpdateDist)
+                lists:zip(lists:seq(StartRow, EndRow), element(1, UpdateProcData))
             ),
             helpers:hello(["result", Result]),
             helpers:hello(["end", erlang:system_time(), erlang:timestamp()]),
             ok;
         _ ->
             distributors:send_to_neighbours(
-                Neighs,
+                Pids,
                 {
                     reduction, 
-                    MinVertex,
-                    MinVal        
+                    MinVertexProps  
                 }
             ),
             map_task(
-                NumVertices, 
-                NumProcs, 
-                MinVertex,
-                MinVal, 
-                LocalData, 
-                UpdateDist, 
-                UpdateVisited
+                ProcProps,
+                UpdateProcData,
+                LocalData,
+                SysProps,
+                MinVertexProps,
+                Pids
             )
     end.
 
 
-
-
-relax_edges(Vertex, Edges, LocalDist, Visited, BaseDist) ->
+relax_edges(SourceProps, ProcData, Edges) ->
     { 
-        relax_edges(Edges, LocalDist, 1, BaseDist),
-        lists:append(Visited, [Vertex])
+        relax_edges(Edges, element(1, ProcData), 1, element(1, SourceProps)),
+        lists:append(element(2, ProcData), [element(2, SourceProps)])
     }.
 relax_edges(_, [], _, _) -> [];
 relax_edges([Edge | RestEdges], [H|T], Index, BaseDist) ->
@@ -140,9 +144,38 @@ relax_edges([Edge | RestEdges], [H|T], Index, BaseDist) ->
     end.
 
 
-init_dijkstra(NumVertices, NumProcs, Source, LocalData) ->
-    Rank = get_rank(),
-    {StartRow, EndRow} = helpers:get_bounds(NumVertices, NumProcs),
+
+proc_run(Rank, ProcProps, LocalData, SysProps, Pids) ->
+    receive
+        {input, Data} ->
+
+            % helpers:hello(["received", self(), Data, LocalData]),
+            proc_run(
+                Rank,
+                ProcProps,
+                lists:append(LocalData, Data),
+                SysProps,  
+                Pids
+            );
+        {init, SourceProps} ->
+            dijkstra:init_dijkstra(
+                Rank,
+                ProcProps,
+                LocalData,
+                SysProps, 
+                SourceProps, 
+                Pids
+            ),
+            ok;
+        stop ->
+            ok
+    end.
+
+
+init_dijkstra(Rank, ProcProps, LocalData, SysProps, SourceProps, Pids) ->
+    ProcProps = helpers:get_bounds(SysProps, Rank),
+    {StartRow, EndRow} = ProcProps,
+    {_, Source} = SourceProps,
     LocalDist = case { StartRow =< Source , Source =< EndRow } of
                     {true, true} ->
                         lists:append([lists:duplicate(Source-StartRow, ?Inf), [0], lists:duplicate(EndRow-Source, ?Inf)]);
@@ -150,26 +183,59 @@ init_dijkstra(NumVertices, NumProcs, Source, LocalData) ->
                         lists:duplicate(EndRow-StartRow+1, ?Inf)
                 end,
     
+    ProcData = {LocalDist, []},
     case Rank of
         1 ->
             map_task(
-                NumVertices,
-                NumProcs,
-                Source,
-                0,
+                ProcProps,
+                ProcData,
                 LocalData,
-                LocalDist,
-                []
+                SysProps,
+                SourceProps,
+                Pids
             );
 
         _ ->         
             reduce_task(
-                    NumVertices,
-                    NumProcs,
-                    Source,
-                    0,
+                    ProcProps,
+                    ProcData,
                     LocalData,
-                    LocalDist,
-                    []
+                    SysProps,
+                    SourceProps,
+                    Pids
             )
+    end.
+
+
+distribute_graph(Device, SysProps, Displs, CurRow, CurIndex, CurPid) ->
+    EndRow = lists:nth(CurIndex, Displs),
+    if 
+        CurRow > element(1, SysProps) ->
+            [];
+        CurRow =< EndRow ->
+            distributors:read_and_send(Device, CurPid),
+            distribute_graph(
+                Device, 
+                SysProps, 
+                Displs, 
+                CurRow + 1, 
+                CurIndex,
+                CurPid
+            );
+        true ->
+            % register_proc(
+            %         spawner(SysProps, CurIndex+1),                
+            %         CurIndex+1
+            %     ),
+            Pid = spawner(SysProps, CurIndex+1),
+            lists:append(
+                [Pid],
+                distribute_graph(
+                    Device, 
+                    SysProps, 
+                    Displs, 
+                    CurRow, 
+                    CurIndex+1,
+                    Pid
+                ))
     end.
