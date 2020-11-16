@@ -42,19 +42,28 @@ start() ->
     
 
     helpers:hello(["start", erlang:system_time(), erlang:timestamp()]),
+    Start_time = erlang:system_time(),
     LocalData = GetData([], 1, lists:nth(1, Displs)),
     
     Pids = dijkstra:distribute_graph(Device, SysProps, Displs, lists:nth(1, Displs)+1, 1, self()),
     % helpers:hello([self(), Pids]),
     distributors:send_to_neighbours(Pids, {init, {0, Source}}),
-    
-    dijkstra:init_dijkstra(
+    {Time, _} = timer:tc(dijkstra,init_dijkstra,[
         1,
         helpers:get_bounds(SysProps, 1),
         LocalData,
         SysProps, 
         {0, Source}, 
         Pids
-    ),
-   
-    file:close(Device).
+    ]),
+    % End_time = dijkstra:init_dijkstra(
+    %     1,
+    %     helpers:get_bounds(SysProps, 1),
+    %     LocalData,
+    %     SysProps, 
+    %     {0, Source}, 
+    %     Pids
+    % ),
+   helpers:hello([Time/1000000]),
+%    helpers:hello([os:timestamp()]),
+   file:close(Device).

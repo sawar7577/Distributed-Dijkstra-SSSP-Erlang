@@ -20,17 +20,22 @@
 
 read_int_line(Device) ->
     Row = file:read_line(Device),
+    Check_inf = fun(X) -> 
+            {Int, _ } = string:to_integer(X),
+            case Int == -1 of
+                true -> ?Inf;
+                false -> Int
+            end
+        end,
     case Row of 
+
         eof ->
             [];
         {ok, Line} ->
-             RetList = lists:map(
-                 fun(X) -> 
-                     {Int, _ } = string:to_integer(X),
-                     Int end,
+            lists:map(
+                 Check_inf,
                  string:split(string:trim(Line), " ", all)
-                ),
-            RetList
+                )
     end.
 
 

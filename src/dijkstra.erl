@@ -107,9 +107,9 @@ map_task(ProcProps, ProcData, LocalData, SysProps, SourceProps, Pids) ->
                 end,
                 lists:zip(lists:seq(StartRow, EndRow), element(1, UpdateProcData))
             ),
-            helpers:hello(["result", Result]),
-            helpers:hello(["end", erlang:system_time(), erlang:timestamp()]),
-            ok;
+            % helpers:hello(["result", Result]),
+            % helpers:hello(["end", erlang:system_time(), erlang:timestamp()]),
+            Result;
         _ ->
             distributors:send_to_neighbours(
                 Pids,
@@ -173,6 +173,7 @@ proc_run(Rank, ProcProps, LocalData, SysProps, Pids) ->
 
 
 init_dijkstra(Rank, ProcProps, LocalData, SysProps, SourceProps, Pids) ->
+    % helpers:hello([Rank, self(), LocalData]),
     ProcProps = helpers:get_bounds(SysProps, Rank),
     {StartRow, EndRow} = ProcProps,
     {_, Source} = SourceProps,
