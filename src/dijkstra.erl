@@ -15,8 +15,8 @@ spawner(SysProps, Rank) ->
     spawn(dijkstra, proc_run, [Rank, helpers:get_bounds(SysProps, Rank), [], SysProps, [self()]]).
 
 reduce_task(ProcProps, ProcData, LocalData, SysProps, SourceProps, Pids)->
-    {_, Vis} = ProcData,
-    helpers:hello(["visited", Vis, self()]),
+    % {_, Vis} = ProcData,
+    % helpers:hello(["visited", Vis, self()]),
     {NumVertices, _} = SysProps,
     {StartRow, EndRow} = ProcProps,
     UpdateProcData = relax_edges(
@@ -61,8 +61,8 @@ reduce_task(ProcProps, ProcData, LocalData, SysProps, SourceProps, Pids)->
     
 
 map_task(ProcProps, ProcData, LocalData, SysProps, SourceProps, Pids) ->
-    {_, Vis} = ProcData,
-    helpers:hello(["visited", Vis]),
+    % {_, Vis} = ProcData,
+    % helpers:hello(["visited", length(Vis)]),
     {NumVertices, _} = SysProps,
     {StartRow, EndRow} = ProcProps,
     {StartRow, EndRow} = ProcProps,
@@ -151,11 +151,11 @@ proc_run(Rank, ProcProps, LocalData, SysProps, Pids) ->
                 Pids
             );
         {init, SourceProps} ->
-            helpers:hello(["in proc run", Rank, self()]),
-            distributors:send_to_neighbours(
-                Pids,
-                ready
-            ),
+            % helpers:hello(["in proc run", Rank, self()]),
+            % distributors:send_to_neighbours(
+            %     Pids,
+            %     ready
+            % ),
             dijkstra:init_dijkstra(
                 Rank,
                 ProcProps,
@@ -171,7 +171,7 @@ proc_run(Rank, ProcProps, LocalData, SysProps, Pids) ->
 
 
 init_dijkstra(Rank, ProcProps, LocalData, SysProps, SourceProps, Pids) ->
-    helpers:hello([Rank, self()]),
+    % helpers:hello([Rank, self()]),
     ProcProps = helpers:get_bounds(SysProps, Rank),
     {StartRow, EndRow} = ProcProps,
     {_, Source} = SourceProps,
@@ -207,7 +207,7 @@ init_dijkstra(Rank, ProcProps, LocalData, SysProps, SourceProps, Pids) ->
 
 
 distribute_graph(Device, SysProps, Displs, CurRow, CurIndex, CurPid) ->
-    helpers:hello(["row no", CurRow]),
+    % helpers:hello(["row no", CurRow]),
     EndRow = lists:nth(CurIndex, Displs),
     if 
         CurRow > element(1, SysProps) ->

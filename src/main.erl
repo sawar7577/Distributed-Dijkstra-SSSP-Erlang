@@ -45,8 +45,8 @@ start() ->
     LocalData = GetData([], 1, lists:nth(1, Displs)),
     Pids = dijkstra:distribute_graph(Device, SysProps, Displs, lists:nth(1, Displs)+1, 1, self()),
     distributors:send_to_neighbours(Pids, {init, {0, Source}}),
-    helpers:hello([wait_for_response(Pids, ready)]),
-    {Time, _} = timer:tc(dijkstra,init_dijkstra,[
+    % helpers:hello([wait_for_response(Pids, ready)]),
+    {Time, Result} = timer:tc(dijkstra,init_dijkstra,[
         1,
         helpers:get_bounds(SysProps, 1),
         LocalData,
@@ -54,5 +54,6 @@ start() ->
         {0, Source}, 
         Pids
     ]),
+    helpers:hello([Result]),
    helpers:hello([Time/1000000]),
    file:close(Device).

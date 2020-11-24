@@ -68,8 +68,8 @@ int main(){
         //     cout<<"NO"<<endl;
         // else
         //     cout<<dist[desti]<<endl;
-        // for(int i=1;i<=v;i++)
-        //     cout<<"{"<<i<<","<<dist[i]<<"}"<<endl;
+        for(int i=1;i<=v;i++)
+            cout<<"{"<<i<<","<<dist[i]<<"}"<<endl;
         cout<<dist[source]<<endl;
         cout<<endl;
     }

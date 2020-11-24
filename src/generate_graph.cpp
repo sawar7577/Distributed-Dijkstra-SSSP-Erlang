@@ -5,12 +5,13 @@ using namespace std;
 // generated 
 #define RUN 1 
 // Define the maximum number of vertices of the graph 
-const int MAX_VERTICES = 5000;
+const int MAX_VERTICES = 1500;
 // Define the maximum number of edges 
-const int MAX_EDGES =  1000; 
+const int MAX_EDGES =  2000; 
 // Define the maximum weight of edges 
 #define MAXWEIGHT 10
 const int MAX_PROC = min(MAX_VERTICES,25); 
+// const int MAX_PROC = 10;
 #define Inf -1
 
 int graph[MAX_VERTICES+2][MAX_VERTICES+2];
@@ -42,13 +43,13 @@ int main()
   
     for (int i=1; i<=RUN; i++) 
     { 
-        NUM = 1 + rand() % MAX_VERTICES; 
-  
+        // NUM = 1 + rand() % MAX_VERTICES; 
+        NUM = MAX_VERTICES;
         // Define the maximum number of edges of the graph 
         // Since the most dense graph can have N*(N-1)/2 edges 
         // where N =  n number of vertices in the graph 
-        NUMEDGE = 1 + rand() % MAX_EDGES; 
-  
+        // NUMEDGE = 1 + rand() % MAX_EDGES; 
+        NUMEDGE = MAX_EDGES;
         while (NUMEDGE > NUM*(NUM-1)/2) 
             NUMEDGE = 1 + rand() % MAX_EDGES; 
   
@@ -102,7 +103,8 @@ int main()
         } 
 
         int source = 1 + rand()%NUM;
-        int num_proc = 1 + rand()%MAX_PROC;
+        // int num_proc = 1 + rand()%MAX_PROC;
+        int num_proc = 20;
         cout<<endl;
         cout<<"Num_Proc: "<<num_proc<<" Source: "<<source<<endl;
         cout<<"Num Vertices:"<<NUM<<" Num Edges:"<<NUMEDGE<<endl;
@@ -113,7 +115,8 @@ int main()
         {
             for(int j=1;j<=NUM;j++)
             {
-                myfile<<graph[i][j]<<" ";         
+                // myfile<<graph[i][j]<<" ";  
+                myfile<<1<<" ";  
             }
             myfile<<endl;
         } 
