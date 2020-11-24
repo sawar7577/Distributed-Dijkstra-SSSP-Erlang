@@ -24,7 +24,8 @@ hello(Line)->
 make_displs(NumVertices, NumProcs) -> 
     PerProc = NumVertices div NumProcs,
     RemProc = NumVertices rem NumProcs,
-    InitDispls = lists:droplast(lists:seq(PerProc, NumVertices, PerProc)),
+    {InitDispls,_} = lists:split(NumProcs-1,lists:seq(PerProc, NumVertices, PerProc)),
+    % helpers:hello([PerProc, RemProc, InitDispls]),
     lists:append(
         InitDispls,
         [
@@ -101,6 +102,7 @@ get_row(Data, RowNumber, NumVertices) ->
 get_col([], _, _) -> [];
 get_col(Data, ColNumber, NumVertices) ->
     {Row, RestData} = lists:split(NumVertices, Data),
+    % hello([self(),"get_col", Data, Row, RestData]),
     lists:append(
         [lists:nth(ColNumber, Row)],
         get_col(RestData, ColNumber, NumVertices)

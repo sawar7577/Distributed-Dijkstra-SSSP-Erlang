@@ -23,8 +23,12 @@ start() ->
         dijkstra 
     ]),
     
-    {ok, Device} = file:open("./test.txt", [read]),
-    [NumVertices, NumProcs, Source] = distributors:read_int_line(Device),
+    {ok, Device} = file:open("./graph.txt", [read]),
+    [NumVertices, SpecProcs, Source] = distributors:read_int_line(Device),
+    NumProcs = case SpecProcs > NumVertices of
+                true -> NumVertices;
+                false -> SpecProcs
+            end,
     helpers:hello([NumVertices, NumProcs, Source]),
     SysProps = {NumVertices, NumProcs},
     Displs = lists:append(helpers:make_displs(NumVertices, NumProcs), [ ?Inf ] ),
@@ -43,6 +47,7 @@ start() ->
 
     helpers:hello(["starting", erlang:system_time(), erlang:timestamp()]),
     LocalData = GetData([], 1, lists:nth(1, Displs)),
+    % helpers:hello([Displs]),
     Pids = dijkstra:distribute_graph(Device, SysProps, Displs, lists:nth(1, Displs)+1, 1, self()),
     distributors:send_to_neighbours(Pids, {init, {0, Source}}),
     % helpers:hello([wait_for_response(Pids, ready)]),

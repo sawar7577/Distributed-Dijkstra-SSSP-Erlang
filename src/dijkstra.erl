@@ -17,8 +17,10 @@ spawner(SysProps, Rank) ->
 reduce_task(ProcProps, ProcData, LocalData, SysProps, SourceProps, Pids)->
     % {_, Vis} = ProcData,
     % helpers:hello(["visited", Vis, self()]),
+
     {NumVertices, _} = SysProps,
     {StartRow, EndRow} = ProcProps,
+    % helpers:hello([self(), SourceProps, ProcProps, ProcData, get_col(LocalData, element(2, SourceProps), NumVertices)]),
     UpdateProcData = relax_edges(
                         SourceProps,
                         ProcData,
