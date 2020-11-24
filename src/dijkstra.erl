@@ -15,13 +15,10 @@ spawner(SysProps, Rank) ->
     spawn(dijkstra, proc_run, [Rank, helpers:get_bounds(SysProps, Rank), [], SysProps, [self()]]).
 
 reduce_task(ProcProps, ProcData, LocalData, SysProps, SourceProps, Pids)->
-    % Rank = helpers:get_rank(),
+    {_, Vis} = ProcData,
+    helpers:hello(["visited", Vis, self()]),
     {NumVertices, _} = SysProps,
     {StartRow, EndRow} = ProcProps,
-    % {LocalDist, Visited} = ProcData,
-    % {SourceDist, Source} = SourceProps,
-% 
-% { UpdateDist , UpdateVisited }
     UpdateProcData = relax_edges(
                         SourceProps,
                         ProcData,
@@ -64,8 +61,8 @@ reduce_task(ProcProps, ProcData, LocalData, SysProps, SourceProps, Pids)->
     
 
 map_task(ProcProps, ProcData, LocalData, SysProps, SourceProps, Pids) ->
-    % Rank = helpers:get_rank(),
-    % Neighs = lists:delete(Rank, lists:seq(1, NumProcs)),
+    {_, Vis} = ProcData,
+    helpers:hello(["visited", Vis]),
     {NumVertices, _} = SysProps,
     {StartRow, EndRow} = ProcProps,
     {StartRow, EndRow} = ProcProps,
@@ -107,8 +104,6 @@ map_task(ProcProps, ProcData, LocalData, SysProps, SourceProps, Pids) ->
                 end,
                 lists:zip(lists:seq(StartRow, EndRow), element(1, UpdateProcData))
             ),
-            % helpers:hello(["result", Result]),
-            % helpers:hello(["end", erlang:system_time(), erlang:timestamp()]),
             Result;
         _ ->
             distributors:send_to_neighbours(
@@ -148,8 +143,6 @@ relax_edges([Edge | RestEdges], [H|T], Index, BaseDist) ->
 proc_run(Rank, ProcProps, LocalData, SysProps, Pids) ->
     receive
         {input, Data} ->
-
-            % helpers:hello(["received", self(), Data, LocalData]),
             proc_run(
                 Rank,
                 ProcProps,
@@ -158,6 +151,11 @@ proc_run(Rank, ProcProps, LocalData, SysProps, Pids) ->
                 Pids
             );
         {init, SourceProps} ->
+            helpers:hello(["in proc run", Rank, self()]),
+            distributors:send_to_neighbours(
+                Pids,
+                ready
+            ),
             dijkstra:init_dijkstra(
                 Rank,
                 ProcProps,
@@ -173,7 +171,7 @@ proc_run(Rank, ProcProps, LocalData, SysProps, Pids) ->
 
 
 init_dijkstra(Rank, ProcProps, LocalData, SysProps, SourceProps, Pids) ->
-    % helpers:hello([Rank, self(), LocalData]),
+    helpers:hello([Rank, self()]),
     ProcProps = helpers:get_bounds(SysProps, Rank),
     {StartRow, EndRow} = ProcProps,
     {_, Source} = SourceProps,
@@ -209,6 +207,7 @@ init_dijkstra(Rank, ProcProps, LocalData, SysProps, SourceProps, Pids) ->
 
 
 distribute_graph(Device, SysProps, Displs, CurRow, CurIndex, CurPid) ->
+    helpers:hello(["row no", CurRow]),
     EndRow = lists:nth(CurIndex, Displs),
     if 
         CurRow > element(1, SysProps) ->
@@ -224,10 +223,6 @@ distribute_graph(Device, SysProps, Displs, CurRow, CurIndex, CurPid) ->
                 CurPid
             );
         true ->
-            % register_proc(
-            %         spawner(SysProps, CurIndex+1),                
-            %         CurIndex+1
-            %     ),
             Pid = spawner(SysProps, CurIndex+1),
             lists:append(
                 [Pid],

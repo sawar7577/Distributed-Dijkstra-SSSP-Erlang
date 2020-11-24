@@ -3,7 +3,7 @@
 -export([start/0]).
 -on_load(start/0).
 
--import(distributors, [register_proc/2, read_int_line/1]).
+-import(distributors, [register_proc/2, read_int_line/1, wait_for_response/2]).
 -import(helpers, [make_displs/2, hello/1]).
 -import(dijkstra, [init_dijkstra/6, proc_run/5, distribute_graph/6]).
 -include("macros.hrl").
@@ -41,13 +41,11 @@ start() ->
             end,
     
 
-    helpers:hello(["start", erlang:system_time(), erlang:timestamp()]),
-    Start_time = erlang:system_time(),
+    helpers:hello(["starting", erlang:system_time(), erlang:timestamp()]),
     LocalData = GetData([], 1, lists:nth(1, Displs)),
-    
     Pids = dijkstra:distribute_graph(Device, SysProps, Displs, lists:nth(1, Displs)+1, 1, self()),
-    % helpers:hello([self(), Pids]),
     distributors:send_to_neighbours(Pids, {init, {0, Source}}),
+    helpers:hello([wait_for_response(Pids, ready)]),
     {Time, _} = timer:tc(dijkstra,init_dijkstra,[
         1,
         helpers:get_bounds(SysProps, 1),
@@ -56,14 +54,5 @@ start() ->
         {0, Source}, 
         Pids
     ]),
-    % End_time = dijkstra:init_dijkstra(
-    %     1,
-    %     helpers:get_bounds(SysProps, 1),
-    %     LocalData,
-    %     SysProps, 
-    %     {0, Source}, 
-    %     Pids
-    % ),
    helpers:hello([Time/1000000]),
-%    helpers:hello([os:timestamp()]),
    file:close(Device).
